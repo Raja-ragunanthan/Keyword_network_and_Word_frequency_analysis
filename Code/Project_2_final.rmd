@@ -1,0 +1,818 @@
+---
+title: "Project-2"
+author: "Raja"
+date: "12/15/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = 'C:/Users/raja3/OneDrive/Documents/Foundations data analytics/Project-2')
+```
+
+
+#Loading libraries
+```{r}
+library(readr)
+library(stringr)
+library(forcats)
+library(dplyr)
+library(tidytext)
+library(janeaustenr)
+library(ggplot2)
+library(tidyr)
+library(igraph)
+library(ggraph)
+library(magrittr)
+library(readxl)
+library(igraph)
+```
+
+
+#Task-1
+```{r}
+
+key<-read_excel("Keyword_data.xlsx")
+keywords<-data.frame(Key_word=union_all(key$`Keyword 1`,key$`Keyword 2`,key$`Keyword 3`,key$`Keyword 4`,key$`Keyword 5`,key$`Keyword 6`,key$`Keyword 7`,key$`Keyword 8`,key$`Keyword 9`,key$`Keyword 10`,key$`Keyword 11`,key$`Keyword 12`)) %>% 
+  drop_na()
+
+#1 adjacency matrix
+adj_matrix <- matrix(0, nrow=length(unique(keywords$Key_word)), ncol=length(unique(keywords$Key_word)))
+
+colnames(adj_matrix)<-sort(unique(keywords$Key_word))
+rownames(adj_matrix)<-sort(unique(keywords$Key_word))
+
+Keyword_data<-key[-c(1,2,11,12,13,23,24,25,34,35,36,45,46,47,56,57,58),-1]
+
+#2 weighted adj. matrix
+for (i in 1:length(Keyword_data$`Keyword 1`)){
+  temp<-unlist(Keyword_data[i,])
+  temp<-temp[!is.na(temp)]
+  keyword_list<-combn(temp,2)
+  for(j in 1:length(keyword_list[1,])){
+    rowind<-which(rownames(adj_matrix)==(keyword_list[1,j]))
+    colind<-which(colnames(adj_matrix)==(keyword_list[2,j]))
+    adj_matrix[rowind,colind]<-adj_matrix[rowind,colind]+1
+    adj_matrix[colind,rowind]<-adj_matrix[colind,rowind]+1
+}
+}
+
+network_graph<-graph_from_adjacency_matrix(adj_matrix,mode="undirected", weighted = TRUE)
+
+plot(network_graph,edge.label=E(network_graph)$weight, 
+     vertex.frame.color="red",vertex.label.color="black",
+     vertex.size=2,edge.label.color="black")
+
+#3 node degree and strength
+Node_Strength <- data.frame()
+for (i in 1:248)
+  Node_Strength <- rbind(Node_Strength, data.frame(Node = row.names(adj_matrix)[i], Strength = sum(as.numeric(adj_matrix[1:248,i]))))
+Node_Strength
+
+Node_Degree <- data.frame()
+for (i in 1:248) {
+  Degree <- 0
+  for (j in 1:248)
+    if(adj_matrix[j,i]>0) {
+      Degree <- Degree+1
+    }
+  Node_Degree <- rbind(Node_Degree, data.frame(Node = row.names(adj_matrix)[i], Degree = Degree))
+}
+Node_Degree
+
+#4 top 10 nodes by degree and strength
+T_S <- Node_Strength %>% 
+  arrange(desc(Strength)) %>% 
+  head(10)
+T_S
+T_D <- Node_Degree %>% 
+  arrange(desc(Degree)) %>% 
+  head(10)
+T_D
+
+#5 top 10 pairs by weight
+data.frame(Top_10_node_by_Strength = T_S$Node, Top_10_node_by_Degree = T_D$Node)
+
+Top_10_pair <- data.frame()
+for (i in 1:248)
+  for (j in 1:248)
+    if ((i != j) && (i > j)) {
+      Top_10_pair <- rbind(Top_10_pair, data.frame(N1 = row.names(adj_matrix)[i], N2 = row.names(adj_matrix)[j], Count = adj_matrix[i,j]))
+    }
+
+Top_10_pair %>% 
+  arrange(desc(Count)) %>% 
+  head(10)
+
+#6 degree vs average strength
+a <- data.frame(Strength = Node_Strength$Strength, Degree = Node_Degree$Degree)
+
+avg_s <- a %>% 
+  group_by(Degree) %>% 
+  summarise(Average_Strength = mean(Strength))
+
+ggplot(avg_s, aes(x=Degree, y=Average_Strength)) + geom_point() + geom_line()
+
+```
+
+#Task-2
+##2017 dataset
+```{r}
+# Loading data
+data_2017 <- read_csv("2017.csv")
+data_2017 <- data_2017 %>% 
+  subset(format(date, format="%Y") == 2017)
+
+#Converting tweets to words
+words <- c()
+for (i in 1:nrow(data_2017)) {
+  words <- c(words, unlist(strsplit(data_2017$tweet[i]," ")))
+}
+
+#Converting words to lower cases
+words <- tolower(words[!str_detect(words, "@")])
+
+#Combining all the stop words
+stopwords <- unlist(union_all(stop_words$word, stopwords::stopwords("en", source = "snowball"), stopwords::stopwords("en", source = "stopwords-iso"), 
+                               stopwords::stopwords("en", source = "smart"), stopwords::stopwords("en", source = "marimo"), 
+                               stopwords::stopwords("en", source = "nltk")))
+
+
+`%notin%` <- Negate(`%in%`)
+
+#Filtering the stop words
+words <- data.frame(words = words[words %notin% stopwords])
+
+#Removing all the special characters
+for (i in 1:length(words$words)) {
+  words$words[i] <- str_remove_all(words$words[i], "[^A-Za-z]")
+}
+
+#Dropping NA's
+words_cleaned <- words %>% 
+  na_if("") %>% 
+  drop_na()
+
+#1 word frequency for 2017
+word_freq <- words_cleaned %>% 
+  group_by(words) %>% 
+  summarise(Frequency = n()) %>% 
+  na_if("") %>% 
+  drop_na() %>% 
+  arrange(desc(Frequency))
+
+word_freq
+
+#2 top 10 words
+Top_10_words <- head(word_freq, 10)
+
+Top_10_words
+
+word_freq$Total <- sum(word_freq$Frequency)
+
+#3 histogram
+
+ggplot(word_freq, aes(Frequency/Total)) +
+  geom_histogram(show.legend = FALSE) +
+  xlim(NA, 0.0009)
+
+#4 zipf's law and ranking
+freq_by_rank <- word_freq %>% 
+  mutate(rank = row_number(), 
+         `term frequency` = Frequency/Total)
+
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`)) + 
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+
+rank_subset <- freq_by_rank %>% 
+  filter(rank < 500,
+         rank > 10)
+
+lm(log10(`term frequency`) ~ log10(rank), data = rank_subset)
+
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`)) + 
+  geom_abline(intercept = -1.765, slope = -0.587, 
+              color = "gray50", linetype = 2) +
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+
+#5 bigrams
+elon_tw_bigrams <- data_2017 %>%
+  unnest_tokens(bigram, tweet, token = "ngrams", n = 2)
+
+elon_tw_bigrams$bigram
+
+# Counting bigrams
+elon_tw_bigrams %>%
+  count(bigram, sort = TRUE)
+
+
+# bigrams with stop words
+bigrams_separated <- elon_tw_bigrams %>%
+  separate(bigram, c("word1", "word2"), sep = " ") %>% 
+  select(word1,word2,name)
+
+bigrams_filtered <- bigrams_separated %>%
+  filter(word1 %notin% stopwords) %>%
+  filter(word2 %notin% stopwords)
+
+# new bigram counts:
+bigram_counts <- bigrams_filtered %>% 
+  count(word1, word2, sort = TRUE)
+
+# bigram as tf-idf
+bigrams_united <- bigrams_filtered %>%
+  unite(bigram, word1, word2, sep = " ")
+
+bigram_tf_idf <- bigrams_united %>%
+  count(name, bigram) %>%
+  bind_tf_idf(bigram, name, n) %>%
+  arrange(desc(tf_idf))
+
+bigram_tf_idf
+
+bigram_graph <- bigram_counts %>%
+  filter(n > 2) %>%
+  graph_from_data_frame()
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1)
+
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void()
+
+```
+
+##2018 dataset
+```{r}
+# Loading data
+data_2018 <- read_csv("2018.csv")
+data_2018 <- data_2018 %>% 
+  subset(format(date, format="%Y") == 2018)
+
+#Converting tweets to words
+words <- c()
+for (i in 1:nrow(data_2018)) {
+  words <- c(words, unlist(strsplit(data_2018$tweet[i]," ")))
+}
+
+#Converting words to lower cases
+words <- tolower(words[!str_detect(words, "@")])
+
+#Combining all the stop words
+stopwords <- unlist(union_all(stop_words$word, stopwords::stopwords("en", source = "snowball"), stopwords::stopwords("en", source = "stopwords-iso"), 
+                               stopwords::stopwords("en", source = "smart"), stopwords::stopwords("en", source = "marimo"), 
+                               stopwords::stopwords("en", source = "nltk")))
+
+
+`%notin%` <- Negate(`%in%`)
+
+#Filtering the stop words
+words <- data.frame(words = words[words %notin% stopwords])
+
+#Removing all the special characters
+for (i in 1:length(words$words)) {
+  words$words[i] <- str_remove_all(words$words[i], "[^A-Za-z]")
+}
+
+#Dropping NA's
+words_cleaned <- words %>% 
+  na_if("") %>% 
+  drop_na()
+
+#1 word frequency for 2018
+word_freq <- words_cleaned %>% 
+  group_by(words) %>% 
+  summarise(Frequency = n()) %>% 
+  na_if("") %>% 
+  drop_na() %>% 
+  arrange(desc(Frequency))
+
+word_freq
+
+#2 top 10 words
+Top_10_words <- head(word_freq, 10)
+
+Top_10_words
+
+word_freq$Total <- sum(word_freq$Frequency)
+
+#3 histogram
+
+ggplot(word_freq, aes(Frequency/Total)) +
+  geom_histogram(show.legend = FALSE) +
+  xlim(NA, 0.0009)
+
+#4 zipf's law and ranking
+freq_by_rank <- word_freq %>% 
+  mutate(rank = row_number(), 
+         `term frequency` = Frequency/Total)
+
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`)) + 
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+
+rank_subset <- freq_by_rank %>% 
+  filter(rank < 500,
+         rank > 10)
+
+lm(log10(`term frequency`) ~ log10(rank), data = rank_subset)
+
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`)) + 
+  geom_abline(intercept = -1.7570, slope = -0.6155, 
+              color = "gray50", linetype = 2) +
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+
+#5 bigrams
+elon_tw_bigrams <- data_2018 %>%
+  unnest_tokens(bigram, tweet, token = "ngrams", n = 2)
+
+elon_tw_bigrams$bigram
+
+# Counting bigrams
+elon_tw_bigrams %>%
+  count(bigram, sort = TRUE)
+
+
+# bigrams with stop words
+bigrams_separated <- elon_tw_bigrams %>%
+  separate(bigram, c("word1", "word2"), sep = " ") %>% 
+  select(word1,word2,name)
+
+bigrams_filtered <- bigrams_separated %>%
+  filter(word1 %notin% stopwords) %>%
+  filter(word2 %notin% stopwords)
+
+# new bigram counts:
+bigram_counts <- bigrams_filtered %>% 
+  count(word1, word2, sort = TRUE)
+
+# bigram as tf-idf
+bigrams_united <- bigrams_filtered %>%
+  unite(bigram, word1, word2, sep = " ")
+
+bigram_tf_idf <- bigrams_united %>%
+  count(name, bigram) %>%
+  bind_tf_idf(bigram, name, n) %>%
+  arrange(desc(tf_idf))
+
+bigram_tf_idf
+
+bigram_graph <- bigram_counts %>%
+  filter(n > 7) %>%
+  graph_from_data_frame()
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1)
+
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void()
+
+```
+
+##2019 dataset
+```{r}
+# Loading data
+data_2019 <- read_csv("2019.csv")
+data_2019 <- data_2019 %>% 
+  subset(format(date, format="%Y") == 2019)
+
+#Converting tweets to words
+words <- c()
+for (i in 1:nrow(data_2019)) {
+  words <- c(words, unlist(strsplit(data_2019$tweet[i]," ")))
+}
+
+#Converting words to lower cases
+words <- tolower(words[!str_detect(words, "@")])
+
+#Combining all the stop words
+stopwords <- unlist(union_all(stop_words$word, stopwords::stopwords("en", source = "snowball"), stopwords::stopwords("en", source = "stopwords-iso"), 
+                               stopwords::stopwords("en", source = "smart"), stopwords::stopwords("en", source = "marimo"), 
+                               stopwords::stopwords("en", source = "nltk")))
+
+
+`%notin%` <- Negate(`%in%`)
+
+#Filtering the stop words
+words <- data.frame(words = words[words %notin% stopwords])
+
+#Removing all the special characters
+for (i in 1:length(words$words)) {
+  words$words[i] <- str_remove_all(words$words[i], "[^A-Za-z]")
+}
+
+#Dropping NA's
+words_cleaned <- words %>% 
+  na_if("") %>% 
+  drop_na()
+
+#1 word frequency for 2019
+word_freq <- words_cleaned %>% 
+  group_by(words) %>% 
+  summarise(Frequency = n()) %>% 
+  na_if("") %>% 
+  drop_na() %>% 
+  arrange(desc(Frequency))
+
+word_freq
+
+#2 top 10 words
+Top_10_words <- head(word_freq, 10)
+
+Top_10_words
+
+word_freq$Total <- sum(word_freq$Frequency)
+
+#3 histogram
+
+ggplot(word_freq, aes(Frequency/Total)) +
+  geom_histogram(show.legend = FALSE) +
+  xlim(NA, 0.0009)
+
+#4 zipf's law and ranking
+freq_by_rank <- word_freq %>% 
+  mutate(rank = row_number(), 
+         `term frequency` = Frequency/Total)
+
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`)) + 
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+
+rank_subset <- freq_by_rank %>% 
+  filter(rank < 500,
+         rank > 10)
+
+lm(log10(`term frequency`) ~ log10(rank), data = rank_subset)
+
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`)) + 
+  geom_abline(intercept = -1.676, slope = -0.636, 
+              color = "gray50", linetype = 2) +
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+
+#5 bigrams
+elon_tw_bigrams <- data_2019 %>%
+  unnest_tokens(bigram, tweet, token = "ngrams", n = 2)
+
+elon_tw_bigrams$bigram
+
+# Counting bigrams
+elon_tw_bigrams %>%
+  count(bigram, sort = TRUE)
+
+
+# bigrams with stop words
+bigrams_separated <- elon_tw_bigrams %>%
+  separate(bigram, c("word1", "word2"), sep = " ") %>% 
+  select(word1,word2,name)
+
+bigrams_filtered <- bigrams_separated %>%
+  filter(word1 %notin% stopwords) %>%
+  filter(word2 %notin% stopwords)
+
+# new bigram counts:
+bigram_counts <- bigrams_filtered %>% 
+  count(word1, word2, sort = TRUE)
+
+# bigram as tf-idf
+bigrams_united <- bigrams_filtered %>%
+  unite(bigram, word1, word2, sep = " ")
+
+bigram_tf_idf <- bigrams_united %>%
+  count(name, bigram) %>%
+  bind_tf_idf(bigram, name, n) %>%
+  arrange(desc(tf_idf))
+
+bigram_tf_idf
+
+bigram_graph <- bigram_counts %>%
+  filter(n > 9) %>%
+  graph_from_data_frame()
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1)
+
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void()
+
+```
+
+
+##2020 dataset
+```{r}
+# Loading data
+data_2020 <- read_csv("2020.csv")
+data_2020 <- data_2020 %>% 
+  subset(format(date, format="%Y") == 2020)
+
+#Converting tweets to words
+words <- c()
+for (i in 1:nrow(data_2020)) {
+  words <- c(words, unlist(strsplit(data_2020$tweet[i]," ")))
+}
+
+#Converting words to lower cases
+words <- tolower(words[!str_detect(words, "@")])
+
+#Combining all the stop words
+stopwords <- unlist(union_all(stop_words$word, stopwords::stopwords("en", source = "snowball"), stopwords::stopwords("en", source = "stopwords-iso"), 
+                               stopwords::stopwords("en", source = "smart"), stopwords::stopwords("en", source = "marimo"), 
+                               stopwords::stopwords("en", source = "nltk")))
+
+
+`%notin%` <- Negate(`%in%`)
+
+#Filtering the stop words
+words <- data.frame(words = words[words %notin% stopwords])
+
+#Removing all the special characters
+for (i in 1:length(words$words)) {
+  words$words[i] <- str_remove_all(words$words[i], "[^A-Za-z]")
+}
+
+#Dropping NA's
+words_cleaned <- words %>% 
+  na_if("") %>% 
+  drop_na()
+
+#1 word frequency for 2020
+word_freq <- words_cleaned %>% 
+  group_by(words) %>% 
+  summarise(Frequency = n()) %>% 
+  na_if("") %>% 
+  drop_na() %>% 
+  arrange(desc(Frequency))
+
+word_freq
+
+#2 top 10 words
+Top_10_words <- head(word_freq, 10)
+
+Top_10_words
+
+word_freq$Total <- sum(word_freq$Frequency)
+
+#3 histogram
+
+ggplot(word_freq, aes(Frequency/Total)) +
+  geom_histogram(show.legend = FALSE) +
+  xlim(NA, 0.0009)
+
+#4 zipf's law and ranking
+freq_by_rank <- word_freq %>% 
+  mutate(rank = row_number(), 
+         `term frequency` = Frequency/Total)
+
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`)) + 
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+
+rank_subset <- freq_by_rank %>% 
+  filter(rank < 500,
+         rank > 10)
+
+lm(log10(`term frequency`) ~ log10(rank), data = rank_subset)
+
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`)) + 
+  geom_abline(intercept = -1.7671, slope = -0.6013, 
+              color = "gray50", linetype = 2) +
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+
+#5 bigrams
+elon_tw_bigrams <- data_2020 %>%
+  unnest_tokens(bigram, tweet, token = "ngrams", n = 2)
+
+elon_tw_bigrams$bigram
+
+# Counting bigrams
+elon_tw_bigrams %>%
+  count(bigram, sort = TRUE)
+
+
+# bigrams with stop words
+bigrams_separated <- elon_tw_bigrams %>%
+  separate(bigram, c("word1", "word2"), sep = " ") %>% 
+  select(word1,word2,name)
+
+bigrams_filtered <- bigrams_separated %>%
+  filter(word1 %notin% stopwords) %>%
+  filter(word2 %notin% stopwords)
+
+# new bigram counts:
+bigram_counts <- bigrams_filtered %>% 
+  count(word1, word2, sort = TRUE)
+
+# bigram as tf-idf
+bigrams_united <- bigrams_filtered %>%
+  unite(bigram, word1, word2, sep = " ")
+
+bigram_tf_idf <- bigrams_united %>%
+  count(name, bigram) %>%
+  bind_tf_idf(bigram, name, n) %>%
+  arrange(desc(tf_idf))
+
+bigram_tf_idf
+
+bigram_graph <- bigram_counts %>%
+  filter(n > 6) %>%
+  graph_from_data_frame()
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1)
+
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void()
+
+```
+
+##2021 dataset
+```{r}
+# Loading data
+data_2021 <- read_csv("2021.csv")
+data_2021 <- data_2021 %>% 
+  subset(format(date, format="%Y") == 2021)
+
+#Converting tweets to words
+words <- c()
+for (i in 1:nrow(data_2021)) {
+  words <- c(words, unlist(strsplit(data_2021$tweet[i]," ")))
+}
+
+#Converting words to lower cases
+words <- tolower(words[!str_detect(words, "@")])
+
+#Combining all the stop words
+stopwords <- unlist(union_all(stop_words$word, stopwords::stopwords("en", source = "snowball"), stopwords::stopwords("en", source = "stopwords-iso"), 
+                               stopwords::stopwords("en", source = "smart"), stopwords::stopwords("en", source = "marimo"), 
+                               stopwords::stopwords("en", source = "nltk")))
+
+
+`%notin%` <- Negate(`%in%`)
+
+#Filtering the stop words
+words <- data.frame(words = words[words %notin% stopwords])
+
+#Removing all the special characters
+for (i in 1:length(words$words)) {
+  words$words[i] <- str_remove_all(words$words[i], "[^A-Za-z]")
+}
+
+#Dropping NA's
+words_cleaned <- words %>% 
+  na_if("") %>% 
+  drop_na()
+
+#1 word frequency for 2021
+word_freq <- words_cleaned %>% 
+  group_by(words) %>% 
+  summarise(Frequency = n()) %>% 
+  na_if("") %>% 
+  drop_na() %>% 
+  arrange(desc(Frequency))
+
+word_freq
+
+#2 top 10 words
+Top_10_words <- head(word_freq, 10)
+
+Top_10_words
+
+word_freq$Total <- sum(word_freq$Frequency)
+
+#3 histogram
+
+ggplot(word_freq, aes(Frequency/Total)) +
+  geom_histogram(show.legend = FALSE) +
+  xlim(NA, 0.0009)
+
+#4 zipf's law and ranking
+freq_by_rank <- word_freq %>% 
+  mutate(rank = row_number(), 
+         `term frequency` = Frequency/Total)
+
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`)) + 
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+
+rank_subset <- freq_by_rank %>% 
+  filter(rank < 500,
+         rank > 10)
+
+lm(log10(`term frequency`) ~ log10(rank), data = rank_subset)
+
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`)) + 
+  geom_abline(intercept = -1.6715, slope = -0.5957, 
+              color = "gray50", linetype = 2) +
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+
+#5 bigrams
+elon_tw_bigrams <- data_2021 %>%
+  unnest_tokens(bigram, tweet, token = "ngrams", n = 2)
+
+elon_tw_bigrams$bigram
+
+# Counting bigrams
+elon_tw_bigrams %>%
+  count(bigram, sort = TRUE)
+
+
+# bigrams with stop words
+bigrams_separated <- elon_tw_bigrams %>%
+  separate(bigram, c("word1", "word2"), sep = " ") %>% 
+  select(word1,word2,name)
+
+bigrams_filtered <- bigrams_separated %>%
+  filter(word1 %notin% stopwords) %>%
+  filter(word2 %notin% stopwords)
+
+# new bigram counts:
+bigram_counts <- bigrams_filtered %>% 
+  count(word1, word2, sort = TRUE)
+
+# bigram as tf-idf
+bigrams_united <- bigrams_filtered %>%
+  unite(bigram, word1, word2, sep = " ")
+
+bigram_tf_idf <- bigrams_united %>%
+  count(name, bigram) %>%
+  bind_tf_idf(bigram, name, n) %>%
+  arrange(desc(tf_idf))
+
+bigram_tf_idf
+
+bigram_graph <- bigram_counts %>%
+  filter(n > 2) %>%
+  graph_from_data_frame()
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1)
+
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void()
+
+```
