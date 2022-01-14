@@ -1,4 +1,4 @@
-# Keyword_network_and_Word_frequency_analysis
+# Keyword_network_and_Word_frequency_analysis_using_R
 
 Project 2
 The objective of project 2 is to perform keyword network analysis and word frequency
